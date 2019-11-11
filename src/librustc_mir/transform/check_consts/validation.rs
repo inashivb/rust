@@ -42,7 +42,7 @@ impl<Q: Qualif> QualifCursor<'a, 'mir, 'tcx, Q> {
     ) -> Self {
         let analysis = FlowSensitiveAnalysis::new(q, item);
         let results =
-            dataflow::Engine::new(item.tcx, item.body, item.def_id, dead_unwinds, analysis)
+            dataflow::Engine::new_generic(item.tcx, item.body, item.def_id, dead_unwinds, analysis)
                 .iterate_to_fixpoint();
         let cursor = dataflow::ResultsCursor::new(item.body, results);
 
