@@ -9,11 +9,9 @@ use rustc::mir::{self, Body, Location, Local};
 use rustc_index::bit_set::BitSet;
 use crate::transform::{MirPass, MirSource};
 
+use crate::dataflow::generic::{Analysis, Results, ResultsCursor};
 use crate::dataflow::{do_dataflow, DebugFormatted};
 use crate::dataflow::MoveDataParamEnv;
-use crate::dataflow::BitDenotation;
-use crate::dataflow::DataflowResults;
-use crate::dataflow::DataflowResultsCursor;
 use crate::dataflow::{
     DefinitelyInitializedPlaces, MaybeInitializedPlaces, MaybeUninitializedPlaces
 };
@@ -21,12 +19,14 @@ use crate::dataflow::IndirectlyMutableLocals;
 use crate::dataflow::move_paths::{MovePathIndex, LookupResult};
 use crate::dataflow::move_paths::{HasMoveData, MoveData};
 
-use crate::dataflow::has_rustc_mir_with;
 
 pub struct SanityCheck;
 
 impl<'tcx> MirPass<'tcx> for SanityCheck {
+    #[allow(unused)]
     fn run_pass(&self, tcx: TyCtxt<'tcx>, src: MirSource<'tcx>, body: &mut Body<'tcx>) {
+        use crate::dataflow::has_rustc_mir_with;
+
         let def_id = src.def_id();
         if !tcx.has_attr(def_id, sym::rustc_mir) {
             debug!("skipping rustc_peek::SanityCheck on {}", tcx.def_path_str(def_id));
@@ -57,6 +57,8 @@ impl<'tcx> MirPass<'tcx> for SanityCheck {
                         IndirectlyMutableLocals::new(tcx, body, param_env),
                         |_, i| DebugFormatted::new(&i));
 
+        // FIXME: add these back as dataflow analyses are migrated
+        /*
         if has_rustc_mir_with(&attributes, sym::rustc_peek_maybe_init).is_some() {
             sanity_check_via_rustc_peek(tcx, body, def_id, &attributes, &flow_inits);
         }
@@ -72,6 +74,7 @@ impl<'tcx> MirPass<'tcx> for SanityCheck {
         if has_rustc_mir_with(&attributes, sym::stop_after_dataflow).is_some() {
             tcx.sess.fatal("stop_after_dataflow ended compilation");
         }
+        */
     }
 }
 
@@ -91,16 +94,16 @@ impl<'tcx> MirPass<'tcx> for SanityCheck {
 /// (If there are any calls to `rustc_peek` that do not match the
 /// expression form above, then that emits an error as well, but those
 /// errors are not intended to be used for unit tests.)
-pub fn sanity_check_via_rustc_peek<'tcx, O>(
+pub fn sanity_check_via_rustc_peek<'tcx, A>(
     tcx: TyCtxt<'tcx>,
     body: &Body<'tcx>,
     def_id: DefId,
     _attributes: &[ast::Attribute],
-    results: &DataflowResults<'tcx, O>,
-) where O: RustcPeekAt<'tcx> {
+    results: &Results<'tcx, A>,
+) where A: RustcPeekAt<'tcx> {
     debug!("sanity_check_via_rustc_peek def_id: {:?}", def_id);
 
-    let mut cursor = DataflowResultsCursor::new(results, body);
+    let mut cursor = ResultsCursor::new(body, results);
 
     let peek_calls = body
             .basic_blocks()
@@ -134,9 +137,9 @@ pub fn sanity_check_via_rustc_peek<'tcx, O>(
             | (PeekCallKind::ByVal, mir::Rvalue::Use(mir::Operand::Copy(place)))
             => {
                 let loc = Location { block: bb, statement_index };
-                cursor.seek(loc);
+                cursor.seek_before(loc);
                 let state = cursor.get();
-                results.operator().peek_at(tcx, place, state, call);
+                results.analysis.peek_at(tcx, place, state, call);
             }
 
             _ => {
@@ -240,7 +243,7 @@ impl PeekCall {
     }
 }
 
-pub trait RustcPeekAt<'tcx>: BitDenotation<'tcx> {
+pub trait RustcPeekAt<'tcx>: Analysis<'tcx> {
     fn peek_at(
         &self,
         tcx: TyCtxt<'tcx>,
@@ -250,8 +253,8 @@ pub trait RustcPeekAt<'tcx>: BitDenotation<'tcx> {
     );
 }
 
-impl<'tcx, O> RustcPeekAt<'tcx> for O
-    where O: BitDenotation<'tcx, Idx = MovePathIndex> + HasMoveData<'tcx>,
+impl<'tcx, A> RustcPeekAt<'tcx> for A
+    where A: Analysis<'tcx, Idx = MovePathIndex> + HasMoveData<'tcx>,
 {
     fn peek_at(
         &self,
@@ -277,6 +280,7 @@ impl<'tcx, O> RustcPeekAt<'tcx> for O
     }
 }
 
+/* FIXME: Add this back once `IndirectlyMutableLocals` uses the new dataflow framework.
 impl<'tcx> RustcPeekAt<'tcx> for IndirectlyMutableLocals<'_, 'tcx> {
     fn peek_at(
         &self,
@@ -298,3 +302,4 @@ impl<'tcx> RustcPeekAt<'tcx> for IndirectlyMutableLocals<'_, 'tcx> {
         }
     }
 }
+*/
