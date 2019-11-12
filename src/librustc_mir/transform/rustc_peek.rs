@@ -9,7 +9,7 @@ use rustc::mir::{self, Body, Location, Local};
 use rustc_index::bit_set::BitSet;
 use crate::transform::{MirPass, MirSource};
 
-use crate::dataflow::generic::{Analysis, Results, ResultsCursor};
+use crate::dataflow::generic::{Analysis, Engine, Results, ResultsCursor};
 use crate::dataflow::{do_dataflow, DebugFormatted};
 use crate::dataflow::MoveDataParamEnv;
 use crate::dataflow::{
@@ -40,10 +40,11 @@ impl<'tcx> MirPass<'tcx> for SanityCheck {
         let move_data = MoveData::gather_moves(body, tcx).unwrap();
         let mdpe = MoveDataParamEnv { move_data: move_data, param_env: param_env };
         let dead_unwinds = BitSet::new_empty(body.basic_blocks().len());
-        let flow_inits =
-            do_dataflow(tcx, body, def_id, &attributes, &dead_unwinds,
-                        MaybeInitializedPlaces::new(tcx, body, &mdpe),
-                        |bd, i| DebugFormatted::new(&bd.move_data().move_paths[i]));
+
+        let flow_inits = Engine::new_gen_kill(
+            tcx, body, def_id, &dead_unwinds,
+            MaybeInitializedPlaces::new(tcx, body, &mdpe),
+        ).iterate_to_fixpoint();
         let flow_uninits =
             do_dataflow(tcx, body, def_id, &attributes, &dead_unwinds,
                         MaybeUninitializedPlaces::new(tcx, body, &mdpe),
@@ -57,11 +58,15 @@ impl<'tcx> MirPass<'tcx> for SanityCheck {
                         IndirectlyMutableLocals::new(tcx, body, param_env),
                         |_, i| DebugFormatted::new(&i));
 
-        // FIXME: add these back as dataflow analyses are migrated
-        /*
         if has_rustc_mir_with(&attributes, sym::rustc_peek_maybe_init).is_some() {
             sanity_check_via_rustc_peek(tcx, body, def_id, &attributes, &flow_inits);
         }
+        if has_rustc_mir_with(&attributes, sym::stop_after_dataflow).is_some() {
+            tcx.sess.fatal("stop_after_dataflow ended compilation");
+        }
+
+        // FIXME: add these back as dataflow analyses are migrated
+        /*
         if has_rustc_mir_with(&attributes, sym::rustc_peek_maybe_uninit).is_some() {
             sanity_check_via_rustc_peek(tcx, body, def_id, &attributes, &flow_uninits);
         }
@@ -70,9 +75,6 @@ impl<'tcx> MirPass<'tcx> for SanityCheck {
         }
         if has_rustc_mir_with(&attributes, sym::rustc_peek_indirectly_mutable).is_some() {
             sanity_check_via_rustc_peek(tcx, body, def_id, &attributes, &flow_indirectly_mut);
-        }
-        if has_rustc_mir_with(&attributes, sym::stop_after_dataflow).is_some() {
-            tcx.sess.fatal("stop_after_dataflow ended compilation");
         }
         */
     }
