@@ -37,7 +37,7 @@ use crate::dataflow::Borrows;
 use crate::dataflow::DataflowResultsConsumer;
 use crate::dataflow::FlowAtLocation;
 use crate::dataflow::MoveDataParamEnv;
-use crate::dataflow::{do_dataflow, DebugFormatted};
+use crate::dataflow::{self, do_dataflow, DebugFormatted};
 use crate::dataflow::EverInitializedPlaces;
 use crate::dataflow::{MaybeInitializedPlaces, MaybeUninitializedPlaces};
 
@@ -168,15 +168,11 @@ fn do_mir_borrowck<'a, 'tcx>(
     };
 
     let dead_unwinds = BitSet::new_empty(body.basic_blocks().len());
-    let mut flow_inits = FlowAtLocation::new(do_dataflow(
-        tcx,
-        body,
-        def_id,
-        &attributes,
-        &dead_unwinds,
-        MaybeInitializedPlaces::new(tcx, body, &mdpe),
-        |bd, i| DebugFormatted::new(&bd.move_data().move_paths[i]),
-    ));
+    let flow_inits = MaybeInitializedPlaces::new(tcx, body, &mdpe);
+    let mut flow_inits =
+        dataflow::generic::Engine::new_gen_kill(tcx, body, def_id, &dead_unwinds, flow_inits)
+            .iterate_to_fixpoint()
+            .into_cursor(body);
 
     let locals_are_invalidated_at_exit = tcx.hir().body_owner_kind(id).is_fn_or_closure();
     let borrow_set = Rc::new(BorrowSet::build(
