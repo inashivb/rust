@@ -42,7 +42,7 @@ impl<'tcx> MirPass<'tcx> for SanityCheck {
         let dead_unwinds = BitSet::new_empty(body.basic_blocks().len());
 
         let flow_inits = Engine::new_gen_kill(
-            tcx, body, def_id, &dead_unwinds,
+            tcx, body, def_id,
             MaybeInitializedPlaces::new(tcx, body, &mdpe),
         ).iterate_to_fixpoint();
         let flow_uninits =

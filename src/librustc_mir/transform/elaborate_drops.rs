@@ -38,10 +38,10 @@ impl<'tcx> MirPass<'tcx> for ElaborateDrops {
                 param_env,
             };
             let dead_unwinds = find_dead_unwinds(tcx, body, def_id, &env);
-            let flow_inits = dataflow::generic::Engine::new_gen_kill(
-                tcx, body, def_id, &dead_unwinds,
-                MaybeInitializedPlaces::new(tcx, body, &env),
-            ).iterate_to_fixpoint();
+            let flow_inits = MaybeInitializedPlaces::new(tcx, body, &env);
+            let flow_inits = dataflow::generic::Engine::new_gen_kill(tcx, body, def_id, flow_inits)
+                .dead_unwinds(&dead_unwinds)
+                .iterate_to_fixpoint();
             let flow_uninits =
                 do_dataflow(tcx, body, def_id, &[], &dead_unwinds,
                             MaybeUninitializedPlaces::new(tcx, body, &env),
@@ -74,10 +74,11 @@ fn find_dead_unwinds<'tcx>(
     // We only need to do this pass once, because unwind edges can only
     // reach cleanup blocks, which can't have unwind edges themselves.
     let mut dead_unwinds = BitSet::new_empty(body.basic_blocks().len());
+
     let flow_inits = MaybeInitializedPlaces::new(tcx, body, &env);
-    let flow_inits =
-        dataflow::generic::Engine::new_gen_kill(tcx, body, def_id, &dead_unwinds, flow_inits)
-            .iterate_to_fixpoint();
+    let flow_inits = dataflow::generic::Engine::new_gen_kill(tcx, body, def_id, flow_inits)
+        .iterate_to_fixpoint();
+
     for (bb, bb_data) in body.basic_blocks().iter_enumerated() {
         let location = match bb_data.terminator().kind {
             TerminatorKind::Drop { ref location, unwind: Some(_), .. } |

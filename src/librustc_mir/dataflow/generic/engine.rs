@@ -25,7 +25,7 @@ where
     tcx: TyCtxt<'tcx>,
     body: &'a mir::Body<'tcx>,
     def_id: DefId,
-    dead_unwinds: &'a BitSet<BasicBlock>,
+    dead_unwinds: Option<&'a BitSet<BasicBlock>>,
     entry_sets: IndexVec<BasicBlock, BitSet<A::Idx>>,
     analysis: A,
 
@@ -42,7 +42,6 @@ where
         tcx: TyCtxt<'tcx>,
         body: &'a mir::Body<'tcx>,
         def_id: DefId,
-        dead_unwinds: &'a BitSet<BasicBlock>,
         analysis: A,
     ) -> Self {
         let bits_per_block = analysis.bits_per_block(body);
@@ -70,7 +69,7 @@ where
             }
         }
 
-        Self::new(tcx, body, def_id, dead_unwinds, analysis, Some(trans_for_block))
+        Self::new(tcx, body, def_id, analysis, Some(trans_for_block))
     }
 }
 
@@ -87,17 +86,15 @@ where
         tcx: TyCtxt<'tcx>,
         body: &'a mir::Body<'tcx>,
         def_id: DefId,
-        dead_unwinds: &'a BitSet<BasicBlock>,
         analysis: A,
     ) -> Self {
-        Self::new(tcx, body, def_id, dead_unwinds, analysis, None)
+        Self::new(tcx, body, def_id, analysis, None)
     }
 
     fn new(
         tcx: TyCtxt<'tcx>,
         body: &'a mir::Body<'tcx>,
         def_id: DefId,
-        dead_unwinds: &'a BitSet<BasicBlock>,
         analysis: A,
         trans_for_block: Option<IndexVec<BasicBlock, GenKillSet<A::Idx>>>,
     ) -> Self {
@@ -118,10 +115,15 @@ where
             tcx,
             body,
             def_id,
-            dead_unwinds,
+            dead_unwinds: None,
             entry_sets,
             trans_for_block,
         }
+    }
+
+    pub fn dead_unwinds(mut self, dead_unwinds: &'a BitSet<BasicBlock>) -> Self {
+        self.dead_unwinds = Some(dead_unwinds);
+        self
     }
 
     pub fn iterate_to_fixpoint(mut self) -> Results<'tcx, A> {
@@ -229,7 +231,7 @@ where
             | DropAndReplace { target, value: _, location: _, unwind: Some(unwind) }
             => {
                 self.propagate_bits_into_entry_set_for(in_out, target, dirty_list);
-                if !self.dead_unwinds.contains(bb) {
+                if self.dead_unwinds.map_or(true, |bbs| !bbs.contains(bb)) {
                     self.propagate_bits_into_entry_set_for(in_out, unwind, dirty_list);
                 }
             }
@@ -242,7 +244,7 @@ where
 
             Call { cleanup, ref destination, ref func, ref args, .. } => {
                 if let Some(unwind) = cleanup {
-                    if !self.dead_unwinds.contains(bb) {
+                    if self.dead_unwinds.map_or(true, |bbs| !bbs.contains(bb)) {
                         self.propagate_bits_into_entry_set_for(in_out, unwind, dirty_list);
                     }
                 }
@@ -263,7 +265,7 @@ where
             FalseUnwind { real_target, unwind } => {
                 self.propagate_bits_into_entry_set_for(in_out, real_target, dirty_list);
                 if let Some(unwind) = unwind {
-                    if !self.dead_unwinds.contains(bb) {
+                    if self.dead_unwinds.map_or(true, |bbs| !bbs.contains(bb)) {
                         self.propagate_bits_into_entry_set_for(in_out, unwind, dirty_list);
                     }
                 }
