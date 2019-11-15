@@ -17,8 +17,8 @@ use crate::borrow_check::nll::type_check::free_region_relations::{
 use crate::borrow_check::nll::universal_regions::{DefiningTy, UniversalRegions};
 use crate::borrow_check::nll::ToRegionVid;
 use crate::transform::promote_consts::should_suggest_const_in_array_repeat_expressions_attribute;
+use crate::dataflow::generic::ResultsCursor;
 use crate::dataflow::move_paths::MoveData;
-use crate::dataflow::FlowAtLocation;
 use crate::dataflow::MaybeInitializedPlaces;
 use either::Either;
 use rustc::hir;
@@ -112,7 +112,7 @@ mod relate_tys;
 ///   constraints for the regions in the types of variables
 /// - `flow_inits` -- results of a maybe-init dataflow analysis
 /// - `move_data` -- move-data constructed when performing the maybe-init dataflow analysis
-pub(crate) fn type_check<'tcx>(
+pub(crate) fn type_check<'mir, 'tcx>(
     infcx: &InferCtxt<'_, 'tcx>,
     param_env: ty::ParamEnv<'tcx>,
     body: &Body<'tcx>,
@@ -122,7 +122,7 @@ pub(crate) fn type_check<'tcx>(
     location_table: &LocationTable,
     borrow_set: &BorrowSet<'tcx>,
     all_facts: &mut Option<AllFacts>,
-    flow_inits: &mut FlowAtLocation<'tcx, MaybeInitializedPlaces<'_, 'tcx>>,
+    flow_inits: &mut ResultsCursor<'mir, 'tcx, MaybeInitializedPlaces<'mir, 'tcx>>,
     move_data: &MoveData<'tcx>,
     elements: &Rc<RegionValueElements>,
 ) -> MirTypeckResults<'tcx> {
