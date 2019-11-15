@@ -142,18 +142,38 @@ where
             dirty_queue.insert(bb);
         }
 
-        while let Some(bb) = dirty_queue.pop() {
-            let bb_data = &self.body[bb];
-            let on_entry = &self.entry_sets[bb];
+        // The `trans_for_block` check is manually hoisted out of the loop for performance.
+        // FIXME: Make this more DRY.
+        if let Some(trans_for_block) = self.trans_for_block.take() {
+            while let Some(bb) = dirty_queue.pop() {
+                let bb_data = &self.body[bb];
+                let on_entry = &self.entry_sets[bb];
 
-            temp_state.overwrite(on_entry);
-            self.apply_whole_block_effect(&mut temp_state, bb, bb_data);
+                temp_state.overwrite(on_entry);
+                trans_for_block[bb].apply(&mut temp_state);
 
-            self.propagate_bits_into_graph_successors_of(
-                &mut temp_state,
-                (bb, bb_data),
-                &mut dirty_queue,
-            );
+                self.propagate_bits_into_graph_successors_of(
+                    &mut temp_state,
+                    (bb, bb_data),
+                    &mut dirty_queue,
+                );
+            }
+
+            self.trans_for_block = Some(trans_for_block);
+        } else {
+            while let Some(bb) = dirty_queue.pop() {
+                let bb_data = &self.body[bb];
+                let on_entry = &self.entry_sets[bb];
+
+                temp_state.overwrite(on_entry);
+                self.apply_whole_block_effect(&mut temp_state, bb, bb_data);
+
+                self.propagate_bits_into_graph_successors_of(
+                    &mut temp_state,
+                    (bb, bb_data),
+                    &mut dirty_queue,
+                );
+            }
         }
 
         let Engine { tcx, body, def_id, trans_for_block, entry_sets, analysis, ..  } = self;
@@ -175,14 +195,6 @@ where
         block: BasicBlock,
         block_data: &mir::BasicBlockData<'tcx>,
     ) {
-        // Use the cached block transfer function if available.
-        if let Some(trans_for_block) = &self.trans_for_block {
-            trans_for_block[block].apply(state);
-            return;
-        }
-
-        // Otherwise apply effects one-by-one.
-
         for (statement_index, statement) in block_data.statements.iter().enumerate() {
             let location = Location { block, statement_index };
             self.analysis.apply_before_statement_effect(state, statement, location);
