@@ -1,0 +1,17 @@
+error[E0599]: no method named `get` found for fn item `fn() -> Inner {Inner}` in the current scope
+  --> $DIR/issue-87181.rs:15:13
+   |
+LL |     thing.0.get();
+   |             ^^^ method not found in `fn() -> Inner {Inner}`
+   |
+   = note: `thing.0` is a function, perhaps you wish to call it
+   = help: items from traits can only be used if the trait is implemented and in scope
+note: `Foo` defines an item `get`, perhaps you need to implement it
+  --> $DIR/issue-87181.rs:1:1
+   |
+LL | trait Foo {
+   | ^^^^^^^^^
+
+error: aborting due to previous error
+
+For more information about this error, try `rustc --explain E0599`.
