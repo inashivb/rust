@@ -1743,6 +1743,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
         let tcx = self.tcx();
         let assoc_ident = assoc_segment.ident;
 
+        println!("blaaaaaaaaaaaaaaaaaaah");
         debug!("associated_path_to_ty: {:?}::{}", qself_ty, assoc_ident);
 
         // Check if we have an enum variant.
@@ -1833,7 +1834,22 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                         let sp = tcx.sess.source_map().guess_head_span(sp);
                         err.span_label(sp, format!("variant `{}` not found here", assoc_ident));
                     }
-
+                    println!("{:#?}", hir_ref_id);
+                    if let Some(hir::Node::Expr(hir::Expr {
+                        kind: hir::ExprKind::Assign(left_expr, ..),
+                        ..
+                     })) = tcx.hir().find(hir_ref_id)
+                    {
+                        let sp_node = left_expr.span;
+                        err.multipart_suggestion(
+                            "use parentheses to call the method",
+                            vec![
+                            (sp_node.shrink_to_lo(), "(expr".to_string()),
+                            (sp_node.shrink_to_hi(), ")".to_string()),
+                            ],
+                            Applicability::MaybeIncorrect,
+                            );
+                    }
                     err.emit();
                 } else if !qself_ty.references_error() {
                     // Don't print `TyErr` to the user.
@@ -2307,9 +2323,11 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
         let result_ty = match ast_ty.kind {
             hir::TyKind::Slice(ref ty) => tcx.mk_slice(self.ast_ty_to_ty(&ty)),
             hir::TyKind::Ptr(ref mt) => {
+                println!("PTR");
                 tcx.mk_ptr(ty::TypeAndMut { ty: self.ast_ty_to_ty(&mt.ty), mutbl: mt.mutbl })
             }
             hir::TyKind::Rptr(ref region, ref mt) => {
+                println!("RPTR");
                 let r = self.ast_region_to_region(region, None);
                 debug!(?r);
                 let t = self.ast_ty_to_ty_inner(&mt.ty, true);
@@ -2317,9 +2335,11 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
             }
             hir::TyKind::Never => tcx.types.never,
             hir::TyKind::Tup(ref fields) => {
+                println!("TUP");
                 tcx.mk_tup(fields.iter().map(|t| self.ast_ty_to_ty(&t)))
             }
             hir::TyKind::BareFn(ref bf) => {
+                println!("BAREFN");
                 require_c_abi_if_c_variadic(tcx, &bf.decl, bf.abi, ast_ty.span);
 
                 tcx.mk_fn_ptr(self.ty_of_fn(
@@ -2333,14 +2353,17 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                 ))
             }
             hir::TyKind::TraitObject(ref bounds, ref lifetime, _) => {
+                println!("TraitObject");
                 self.conv_object_ty_poly_trait_ref(ast_ty.span, bounds, lifetime, borrowed)
             }
             hir::TyKind::Path(hir::QPath::Resolved(ref maybe_qself, ref path)) => {
+                println!("PATH");
                 debug!(?maybe_qself, ?path);
                 let opt_self_ty = maybe_qself.as_ref().map(|qself| self.ast_ty_to_ty(qself));
                 self.res_to_ty(opt_self_ty, path, false)
             }
             hir::TyKind::OpaqueDef(item_id, ref lifetimes) => {
+                println!("OpaqueDef");
                 let opaque_ty = tcx.hir().item(item_id);
                 let def_id = item_id.def_id.to_def_id();
 
@@ -2352,6 +2375,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                 }
             }
             hir::TyKind::Path(hir::QPath::TypeRelative(ref qself, ref segment)) => {
+                println!("TypeRelative");
                 debug!(?qself, ?segment);
                 let ty = self.ast_ty_to_ty(qself);
 
@@ -2365,6 +2389,7 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                     .unwrap_or_else(|_| tcx.ty_error())
             }
             hir::TyKind::Path(hir::QPath::LangItem(lang_item, span)) => {
+                println!("LANGPATH");
                 let def_id = tcx.require_lang_item(lang_item, Some(span));
                 let (substs, _) = self.create_substs_for_ast_path(
                     span,
@@ -2378,16 +2403,19 @@ impl<'o, 'tcx> dyn AstConv<'tcx> + 'o {
                 self.normalize_ty(span, tcx.at(span).type_of(def_id).subst(tcx, substs))
             }
             hir::TyKind::Array(ref ty, ref length) => {
+                println!("ARRAY");
                 let length_def_id = tcx.hir().local_def_id(length.hir_id);
                 let length = ty::Const::from_anon_const(tcx, length_def_id);
                 let array_ty = tcx.mk_ty(ty::Array(self.ast_ty_to_ty(&ty), length));
                 self.normalize_ty(ast_ty.span, array_ty)
             }
             hir::TyKind::Typeof(ref e) => {
+                println!("TYPEOF");
                 tcx.sess.emit_err(TypeofReservedKeywordUsed { span: ast_ty.span });
                 tcx.type_of(tcx.hir().local_def_id(e.hir_id))
             }
             hir::TyKind::Infer => {
+                println!("INFER");
                 // Infer also appears as the type of arguments or return
                 // values in an ExprKind::Closure, or as
                 // the type of local variables. Both of these cases are
